@@ -11,6 +11,8 @@ from rest_framework.exceptions import NotFound
 from rest_framework import permissions
 from rest_framework.exceptions import NotFound, PermissionDenied
 from rest_framework_simplejwt.tokens import RefreshToken
+from datetime import datetime
+from rest_framework.pagination import PageNumberPagination
 
 
 ##PROJECTS
@@ -19,8 +21,14 @@ class ProjectView(APIView):
     permission_classes = [permissions.IsAuthenticated]
     def get(self, request):
         objetos = Project.objects.filter(owner=self.request.user)
-        serializer = ProjectSerializer(objetos, many=True)
-        return Response(serializer.data)
+        name = request.query_params.get('name')
+        if name is not None:
+            objetos = objetos.filter(name=name)
+        paginator = PageNumberPagination()
+        paginated_projects = paginator.paginate_queryset(objetos,request)
+        serializer = ProjectSerializer(paginated_projects, many=True)
+        return paginator.get_paginated_response(serializer.data)
+
 
     def post(self, request):
         serializer = ProjectSerializer(data=request.data)
@@ -71,8 +79,36 @@ class TaskView(APIView):
     permission_classes = [permissions.IsAuthenticated]
     def get(self, request):
         objetos = Task.objects.filter(project__owner=self.request.user)
-        serializer = TaskSerializer(objetos, many=True)
-        return Response(serializer.data)
+        is_completed = request.query_params.get('is_completed')
+        due_date_str = request.query_params.get('due_date')
+        due_before_str = request.query_params.get('due_date_before')
+        due_after_str = request.query_params.get('due_date_after')
+        title = request.query_params.get('title')
+
+        if is_completed is not None:
+            if is_completed.lower() == 'true':
+                objetos = objetos.filter(is_completed=True)
+            elif is_completed.lower() == 'false':
+                objetos = objetos.filter(is_completed=False)
+        else:
+            if due_before_str is not None:
+                try:
+                    date = datetime.strptime(due_before_str, "%Y-%m-%d").date()
+                    objetos = objetos.filter(due_date__lte=date)
+                except ValueError:
+                    return Response({'error': 'Formato de fecha inválido. Usa YYYY-MM-DD.'}, status=400)
+            if due_after_str is not None:
+                try:
+                    date = datetime.strptime(due_after_str, "%Y-%m-%d").date()
+                    objetos = objetos.filter(due_date__gte=date)
+                except ValueError:
+                    return Response({'error': 'Formato de fecha inválido. Usa YYYY-MM-DD.'}, status=400)
+        if title is not None:
+            objetos = objetos.filter(title=title)
+        paginator = PageNumberPagination()
+        paginated_tasks = paginator.paginate_queryset(objetos,request)
+        serializer = TaskSerializer(paginated_tasks, many=True)
+        return paginator.get_paginated_response(serializer.data)
     
 
     def post(self, request):
